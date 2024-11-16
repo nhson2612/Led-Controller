@@ -4,8 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>LED Control</title>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/sockjs-client/1.1.4/sockjs.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/stomp.js/2.3.3/stomp.min.js"></script>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -49,81 +47,65 @@
 </head>
 <body>
     <h1>LED Control</h1>
-    <div id="ledStatus">LED is OFF</div>
+    <div id="ledStatus">Connecting...</div>
     <button class="btn btn-on" onclick="setLedStatus(true)">Turn LED ON</button>
     <button class="btn btn-off" onclick="setLedStatus(false)">Turn LED OFF</button>
 
     <script>
-        // Khi trang được tải, gửi yêu cầu GET tới server để nhận trạng thái LED
-        window.onload = () => {
-            fetch('https://test-1-8yfc.onrender.com/led/status') 
-                .then(response => response.json())
-                .then(data => {
-                    // Cập nhật trạng thái LED trên giao diện
-                    updateLedStatus(data.status ? 'true' : 'false');
-                })
-                .catch(error => {
-                    console.error('Error fetching LED status:', error);
-                });
-        };
+        const webSocketUrl = 'wss://test-1-8yfc.onrender.com/led-status';
+        let webSocket;
 
-        // Kết nối đến WebSocket server
-        const socket = new SockJS('https://test-1-8yfc.onrender.com/ws');
-        const stompClient = Stomp.over(socket);
-        
-        // Khi kết nối WebSocket thành công
-        stompClient.connect({}, onConnected, onError);
+        // Kết nối WebSocket
+        function connectWebSocket() {
+            webSocket = new WebSocket(webSocketUrl);
 
-        // Xử lý khi kết nối WebSocket thành công
-        function onConnected() {
-            // Đăng ký nhận thông điệp từ server ở endpoint /led-status
-            stompClient.subscribe('/led-status', onMessageReceived);
+            webSocket.onopen = () => {
+                console.log('WebSocket connection established');
+                updateLedStatus('Connecting...');
+            };
+
+            webSocket.onmessage = (event) => {
+                console.log('Message received from server:', event.data);
+                updateLedStatus(event.data);
+            };
+
+            webSocket.onclose = () => {
+                console.log('WebSocket connection closed, retrying in 5 seconds...');
+                setTimeout(connectWebSocket, 5000); // Tự động kết nối lại sau 5 giây
+            };
+
+            webSocket.onerror = (error) => {
+                console.error('WebSocket error:', error);
+            };
         }
 
-        // Xử lý khi có lỗi kết nối WebSocket
-        function onError(error) {
-            console.error('Could not connect to WebSocket server. Please refresh this page to try again!', error);
-        }
-
-        // Xử lý khi nhận được tin nhắn từ server (trạng thái LED)
-        function onMessageReceived(message){
-            const status = message.body;
-            updateLedStatus(status);
-        }
-
-        // Cập nhật giao diện LED
+        // Cập nhật trạng thái LED trên giao diện
         function updateLedStatus(status) {
             const ledStatusElement = document.getElementById('ledStatus');
             if (status === 'true') {
                 ledStatusElement.textContent = 'LED is ON';
                 ledStatusElement.style.backgroundColor = '#D4EDDA'; // Màu xanh
-            } else {
+            } else if (status === 'false') {
                 ledStatusElement.textContent = 'LED is OFF';
                 ledStatusElement.style.backgroundColor = '#F8D7DA'; // Màu đỏ
+            } else {
+                ledStatusElement.textContent = status;
+                ledStatusElement.style.backgroundColor = '#f9f9f9'; // Màu xám
             }
         }
 
-        // Hàm gửi yêu cầu thay đổi trạng thái LED lên server
+        // Gửi yêu cầu thay đổi trạng thái LED
         function setLedStatus(status) {
-            fetch('https://test-1-8yfc.onrender.com/led/update', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({ status: status }) // Gửi trạng thái true/false
-            })
-            .then(response => {
-                if (response.ok) {
-                    console.log('LED status updated successfully');
-                    updateLedStatus(status ? 'true' : 'false'); // Cập nhật giao diện ngay lập tức
-                } else {
-                    console.error('Failed to update LED status');
-                }
-            })
-            .catch(error => {
-                console.error('Error updating LED status:', error);
-            });
+            if (webSocket && webSocket.readyState === WebSocket.OPEN) {
+                webSocket.send(status);
+                console.log('LED status sent:', status);
+            } else {
+                console.error('WebSocket is not connected. Cannot send LED status.');
+            }
         }
+
+        // Kết nối WebSocket khi trang được tải
+        connectWebSocket();
     </script>
 </body>
 </html>
