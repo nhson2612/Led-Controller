@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LED Control</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/sockjs-client/1.1.4/sockjs.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/stomp.js/2.3.3/stomp.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+            margin: 0;
+            padding: 20px;
+            background-color: #f0f0f0;
+        }
+        h1 {
+            color: #333;
+        }
+        #ledStatus {
+            font-size: 24px;
+            margin: 20px;
+            padding: 10px;
+            border-radius: 5px;
+            background-color: #f9f9f9;
+            color: #555;
+        }
+        .btn {
+            padding: 15px 30px;
+            font-size: 18px;
+            margin: 10px;
+            cursor: pointer;
+            border: none;
+            border-radius: 5px;
+            transition: background-color 0.3s;
+        }
+        .btn-on {
+            background-color: #4CAF50;
+            color: white;
+        }
+        .btn-off {
+            background-color: #f44336;
+            color: white;
+        }
+        .btn:hover {
+            background-color: #45a049;
+        }
+    </style>
+</head>
+<body>
+    <h1>LED Control</h1>
+    <div id="ledStatus">LED is OFF</div>
+    <button class="btn btn-on" onclick="setLedStatus(true)">Turn LED ON</button>
+    <button class="btn btn-off" onclick="setLedStatus(false)">Turn LED OFF</button>
+
+    <script>
+        // Khi trang được tải, gửi yêu cầu GET tới server để nhận trạng thái LED
+        window.onload = () => {
+            fetch('https://test-1-8yfc.onrender.com/led/status') 
+                .then(response => response.json())
+                .then(data => {
+                    // Cập nhật trạng thái LED trên giao diện
+                    updateLedStatus(data.status ? 'true' : 'false');
+                })
+                .catch(error => {
+                    console.error('Error fetching LED status:', error);
+                });
+        };
+
+        // Kết nối đến WebSocket server
+        const socket = new SockJS('https://test-1-8yfc.onrender.com/ws');
+        const stompClient = Stomp.over(socket);
+        
+        // Khi kết nối WebSocket thành công
+        stompClient.connect({}, onConnected, onError);
+
+        // Xử lý khi kết nối WebSocket thành công
+        function onConnected() {
+            // Đăng ký nhận thông điệp từ server ở endpoint /led-status
+            stompClient.subscribe('/led-status', onMessageReceived);
+        }
+
+        // Xử lý khi có lỗi kết nối WebSocket
+        function onError(error) {
+            console.error('Could not connect to WebSocket server. Please refresh this page to try again!', error);
+        }
+
+        // Xử lý khi nhận được tin nhắn từ server (trạng thái LED)
+        function onMessageReceived(message){
+            const status = message.body;
+            updateLedStatus(status);
+        }
+
+        // Cập nhật giao diện LED
+        function updateLedStatus(status) {
+            const ledStatusElement = document.getElementById('ledStatus');
+            if (status === 'true') {
+                ledStatusElement.textContent = 'LED is ON';
+                ledStatusElement.style.backgroundColor = '#D4EDDA'; // Màu xanh
+            } else {
+                ledStatusElement.textContent = 'LED is OFF';
+                ledStatusElement.style.backgroundColor = '#F8D7DA'; // Màu đỏ
+            }
+        }
+
+        // Hàm gửi yêu cầu thay đổi trạng thái LED lên server
+        function setLedStatus(status) {
+            fetch('https://test-1-8yfc.onrender.com/led/update', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ status: status }) // Gửi trạng thái true/false
+            })
+            .then(response => {
+                if (response.ok) {
+                    console.log('LED status updated successfully');
+                    updateLedStatus(status ? 'true' : 'false'); // Cập nhật giao diện ngay lập tức
+                } else {
+                    console.error('Failed to update LED status');
+                }
+            })
+            .catch(error => {
+                console.error('Error updating LED status:', error);
+            });
+        }
+    </script>
+</body>
+</html>
