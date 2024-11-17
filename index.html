@@ -143,15 +143,61 @@
 
             webSocket.onmessage = (event) => {
                 console.log('Message received from server:', event.data);
-                const rawJson = event.data
-                    .replace(/=/g, ':')
-                    .replace(/(\w+):/g, '"$1":')
-                    .replace(/:([\w]+)/g, ': "$1"')
-                    .replace(/"(true|false)"/g, '$1')
-                    .replace(/"null"/g, 'null');
 
-                const jsonObject = JSON.parse(rawJson);
-                updateLedStatus(jsonObject);
+                /**
+                 * Tự phân tích chuỗi JSON không hợp chuẩn thành một đối tượng JavaScript.
+                 * @param {string} rawJson Chuỗi JSON không hợp chuẩn từ server.
+                 * @returns {Object} Đối tượng JavaScript đã phân tích.
+                 */
+                function parseMalformedJson(rawJson) {
+                    // Thay '=' bằng ':', thêm dấu ngoặc kép cho key và xử lý các giá trị.
+                    const fixedJson = rawJson
+                        .replace(/=/g, ':') // Thay '=' bằng ':'
+                        .replace(/(\w+):/g, '"$1":') // Thêm dấu ngoặc kép cho key
+                        .replace(/:([\w.:-]+)/g, (match, value) => {
+                            // Nếu value là true, false, null, hoặc số, giữ nguyên
+                            if (value.match(/^(true|false|null|\d+(\.\d+)?|\d{1,2}:\d{1,2})$/)) {
+                                return `:${value}`;
+                            } else {
+                                // Nếu không, bọc value trong dấu ngoặc kép
+                                return `:"${value}"`;
+                            }
+                        });
+
+                    console.log('Fixed JSON:', fixedJson);
+
+                    // Phân tích thủ công từng cặp key-value
+                    const result = {};
+                    const keyValuePairs = fixedJson
+                        .replace(/^{|}$/g, '') // Loại bỏ dấu { và }
+                        .split(','); // Tách từng cặp key-value
+
+                    for (const pair of keyValuePairs) {
+                        const [key, value] = pair.split(':').map((str) => str.trim().replace(/^"|"$/g, '')); // Loại bỏ dấu ngoặc kép
+                        if (value === 'true') {
+                            result[key] = true;
+                        } else if (value === 'false') {
+                            result[key] = false;
+                        } else if (value === 'null') {
+                            result[key] = null;
+                        } else if (!isNaN(value)) {
+                            result[key] = parseFloat(value); // Chuyển số thành kiểu số
+                        } else {
+                            result[key] = value; // Giữ nguyên giá trị chuỗi
+                        }
+                    }
+
+                    return result;
+                }
+
+                try {
+                    const parsedObject = parseMalformedJson(event.data);
+                    console.log('Parsed Object:', parsedObject);
+                    updateLedStatus(parsedObject);
+                } catch (error) {
+                    console.error('Failed to parse JSON:', error);
+                    console.error('Original data:', event.data);
+                }
             };
 
             webSocket.onclose = () => {
@@ -164,13 +210,12 @@
             };
         }
 
-        // Cập nhật trạng thái LED trên giao diện
-        function updateLedStatus(status) {
-            const ledState = status.isOn ? 'Bật' : 'Tắt';
-            const timeOn = status.time ? status.time : 'Chưa đặt';
-            const timeOff = status.endTime ? status.endTime : 'Chưa đặt';
-            const autoControl = status.lightSensor ? 'Có' : 'Không';
-            autoControlLed = status.lightSensor; // Cập nhật trạng thái Light Sensor
+        function updateLedStatus(body) {
+            const ledState = body.isOn ? 'Bật' : 'Tắt';
+            const timeOn = body.time ? body.time : 'Chưa đặt';
+            const timeOff = body.endTime ? body.endTime : 'Chưa đặt';
+            const autoControl = body.lightSensor ? 'Có' : 'Không';
+            autoControlLed = body.lightSensor; // Cập nhật trạng thái Light Sensor
 
             document.getElementById('ledState').textContent = `Đèn đang: ${ledState}`;
             document.getElementById('onTime').textContent = `Thời gian mở: ${timeOn}`;
@@ -194,16 +239,18 @@
 
         // Gửi thời gian đến server
         function setTime() {
-            const onHour = document.getElementById('onHour').value;
-            const onMinute = document.getElementById('onMinute').value;
-            const offHour = document.getElementById('offHour').value;
-            const offMinute = document.getElementById('offMinute').value;
+            const hour = document.getElementById('onHour').value;
+            const minute = document.getElementById('onMinute').value;
+            const endHour = document.getElementById('offHour').value;
+            const endMinute = document.getElementById('offMinute').value;
 
             const requestBody = {
-                time: `${onHour}:${onMinute}`,
-                endTime: `${offHour}:${offMinute}`
+                hour: hour,
+                minute: minute,
+                endHour: endHour,
+                endMinute: endMinute
             };
-
+            console.log('Request body:', requestBody);
             fetch('https://test-1-8yfc.onrender.com/led/update-time', {
                 method: 'POST',
                 headers: {
