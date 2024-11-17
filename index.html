@@ -15,13 +15,19 @@
         h1 {
             color: #333;
         }
-        #ledStatus {
-            font-size: 24px;
-            margin: 20px;
-            padding: 10px;
-            border-radius: 5px;
+        #statusContainer {
+            font-size: 18px;
+            margin: 20px auto;
+            padding: 20px;
+            border: 1px solid #ccc;
+            border-radius: 10px;
             background-color: #f9f9f9;
-            color: #555;
+            width: fit-content;
+            text-align: left;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+        }
+        #statusContainer p {
+            margin: 10px 0;
         }
         .btn {
             padding: 15px 30px;
@@ -41,7 +47,7 @@
             color: white;
         }
         .btn:hover {
-            background-color: #45a049;
+            opacity: 0.8;
         }
         .time-input {
             margin: 20px 0;
@@ -52,6 +58,7 @@
             margin: 5px;
             border: 1px solid #ccc;
             border-radius: 5px;
+            text-align: center;
         }
         .time-input button {
             padding: 10px 20px;
@@ -66,24 +73,64 @@
         .time-input button:hover {
             background-color: #0056b3;
         }
+        #autoControlBtn {
+            font-size: 16px;
+            padding: 10px 20px;
+            border: 2px solid #007BFF; /* Viền xanh lam */
+            border-radius: 5px; /* Bo góc */
+            background-color: white; /* Nền trắng */
+            color: #007BFF; /* Chữ màu xanh lam */
+            cursor: pointer;
+            transition: all 0.3s ease; /* Hiệu ứng chuyển động */
+        }
+
+        #autoControlBtn:hover {
+            background-color: #007BFF; /* Nền đổi thành xanh lam khi hover */
+            color: white; /* Chữ đổi thành trắng khi hover */
+        }
+
+        /* Thay đổi kiểu dáng khi trạng thái bật */
+        #autoControlBtn.active {
+            background-color: #4CAF50; /* Nền xanh lá khi bật */
+            color: white; /* Chữ trắng khi bật */
+            border-color: #4CAF50; /* Viền xanh lá */
+        }
     </style>
 </head>
 <body>
     <h1>LED Control</h1>
-    <div id="ledStatus">Connecting...</div>
+
+    <div id="statusContainer">
+        <p id="ledState">Đèn đang: ...</p>
+        <p id="onTime">Thời gian mở: ...</p>
+        <p id="offTime">Thời gian tắt: ...</p>
+        <p id="autoControl">Tự động bật/tắt theo độ sáng: ...</p>
+    </div>
+
     <button class="btn btn-on" onclick="setLedStatus(true)">Turn LED ON</button>
     <button class="btn btn-off" onclick="setLedStatus(false)">Turn LED OFF</button>
 
     <div class="time-input">
         <h2>Set Time</h2>
-        <input type="number" id="hourInput" placeholder="Hour (0-23)" min="0" max="23">
-        <input type="number" id="minuteInput" placeholder="Minute (0-59)" min="0" max="59">
-        <button onclick="setTime()">Submit Time</button>
+        <label>Đặt thời gian đèn mở:</label><br>
+        <input type="number" id="onHour" placeholder="Hour (0-23)" min="0" max="23">
+        <input type="number" id="onMinute" placeholder="Minute (0-59)" min="0" max="59"><br>
+
+        <label>Đặt thời gian đèn tắt:</label><br>
+        <input type="number" id="offHour" placeholder="Hour (0-23)" min="0" max="23">
+        <input type="number" id="offMinute" placeholder="Minute (0-59)" min="0" max="59"><br>
+
+        <button onclick="setTime()">Đặt thời gian</button>
+    </div>
+
+    <div>
+        <button id="autoControlBtn" onclick="setLightSensor()"></button> 
     </div>
 
     <script>
         const webSocketUrl = 'wss://test-1-8yfc.onrender.com/led-status';
         let webSocket;
+        var autoControlLed;
 
         // Kết nối WebSocket
         function connectWebSocket() {
@@ -91,12 +138,20 @@
 
             webSocket.onopen = () => {
                 console.log('WebSocket connection established');
-                updateLedStatus('Connecting...');
+                updateLedStatus({ isOn: false, time: null, endTime: null, lightSensor: false });
             };
 
             webSocket.onmessage = (event) => {
                 console.log('Message received from server:', event.data);
-                updateLedStatus(event.data);
+                const rawJson = event.data
+                    .replace(/=/g, ':')
+                    .replace(/(\w+):/g, '"$1":')
+                    .replace(/:([\w]+)/g, ': "$1"')
+                    .replace(/"(true|false)"/g, '$1')
+                    .replace(/"null"/g, 'null');
+
+                const jsonObject = JSON.parse(rawJson);
+                updateLedStatus(jsonObject);
             };
 
             webSocket.onclose = () => {
@@ -111,18 +166,21 @@
 
         // Cập nhật trạng thái LED trên giao diện
         function updateLedStatus(status) {
-            const ledStatusElement = document.getElementById('ledStatus');
-            if (status === 'true') {
-                ledStatusElement.textContent = 'LED is ON';
-                ledStatusElement.style.backgroundColor = '#D4EDDA'; // Màu xanh
-            } else if (status === 'false') {
-                ledStatusElement.textContent = 'LED is OFF';
-                ledStatusElement.style.backgroundColor = '#F8D7DA'; // Màu đỏ
-            } else {
-                ledStatusElement.textContent = status;
-                ledStatusElement.style.backgroundColor = '#f9f9f9'; // Màu xám
-            }
+            const ledState = status.isOn ? 'Bật' : 'Tắt';
+            const timeOn = status.time ? status.time : 'Chưa đặt';
+            const timeOff = status.endTime ? status.endTime : 'Chưa đặt';
+            const autoControl = status.lightSensor ? 'Có' : 'Không';
+            autoControlLed = status.lightSensor; // Cập nhật trạng thái Light Sensor
+
+            document.getElementById('ledState').textContent = `Đèn đang: ${ledState}`;
+            document.getElementById('onTime').textContent = `Thời gian mở: ${timeOn}`;
+            document.getElementById('offTime').textContent = `Thời gian tắt: ${timeOff}`;
+            document.getElementById('autoControl').textContent = `Tự động bật/tắt theo độ sáng: ${autoControl}`;
+            document.getElementById('autoControlBtn').textContent = autoControlLed ? 'Tắt tự động bật/tắt' : 'Bật tự động bật/tắt';
+
+            updateLightSensorButton(); // Cập nhật giao diện nút
         }
+
 
         // Gửi yêu cầu thay đổi trạng thái LED
         function setLedStatus(status) {
@@ -136,17 +194,14 @@
 
         // Gửi thời gian đến server
         function setTime() {
-            const hour = document.getElementById('hourInput').value;
-            const minute = document.getElementById('minuteInput').value;
-
-            if (hour === '' || minute === '' || hour < 0 || hour > 23 || minute < 0 || minute > 59) {
-                alert('Please enter valid hour (0-23) and minute (0-59).');
-                return;
-            }
+            const onHour = document.getElementById('onHour').value;
+            const onMinute = document.getElementById('onMinute').value;
+            const offHour = document.getElementById('offHour').value;
+            const offMinute = document.getElementById('offMinute').value;
 
             const requestBody = {
-                hour: hour,
-                minute: minute
+                time: `${onHour}:${onMinute}`,
+                endTime: `${offHour}:${offMinute}`
             };
 
             fetch('https://test-1-8yfc.onrender.com/led/update-time', {
@@ -156,19 +211,52 @@
                 },
                 body: JSON.stringify(requestBody)
             })
+                .then(response => {
+                    if (response.ok) {
+                        alert('Time updated successfully!');
+                        console.log('Time updated successfully:', requestBody);
+                    } else {
+                        alert('Failed to update time.');
+                        console.error('Failed to update time:', response.statusText);
+                    }
+                })
+                .catch(error => {
+                    alert('An error occurred while updating time.');
+                    console.error('Error:', error);
+                });
+        }
+
+        function setLightSensor() {
+            // Đổi trạng thái autoControlLed
+            autoControlLed = !autoControlLed;
+            console.log(JSON.stringify({autoControlLed }));
+
+            // Gửi trạng thái mới đến server
+            fetch('https://test-1-8yfc.onrender.com/led/update-light-sensor', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: autoControlLed ? true : false 
+            })
             .then(response => {
                 if (response.ok) {
-                    alert('Time updated successfully!');
-                    console.log('Time updated successfully:', requestBody);
+                    alert(`Tính năng tự động bật/tắt theo độ sáng đã được ${autoControlLed ? 'bật' : 'tắt'}!`);
+                    console.log(`Light sensor status updated to: ${autoControlLed}`);
+                    updateLightSensorButton(); // Cập nhật giao diện nút
                 } else {
-                    alert('Failed to update time.');
-                    console.error('Failed to update time:', response.statusText);
+                    alert('Không thể thay đổi trạng thái Light Sensor.');
+                    console.error('Failed to toggle light sensor:', response.statusText);
                 }
             })
             .catch(error => {
-                alert('An error occurred while updating time.');
+                alert('Đã xảy ra lỗi khi thay đổi trạng thái Light Sensor.');
                 console.error('Error:', error);
             });
+        }
+
+        function updateLightSensorButton() {
+            document.getElementById('autoControlBtn').textContent = autoControlLed ? 'Tắt tự động bật/tắt' : 'Bật tự động bật/tắt';
         }
 
         // Kết nối WebSocket khi tải trang
