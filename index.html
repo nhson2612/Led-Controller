@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -95,6 +96,15 @@
             color: white; /* Chữ trắng khi bật */
             border-color: #4CAF50; /* Viền xanh lá */
         }
+        #history{
+            margin: 20px 0;
+            border: #333 1px solid;
+            height: 225px;
+            overflow-y: scroll;
+            width: 225px;
+            margin-left: auto;
+            margin-right: auto;
+        }
     </style>
 </head>
 <body>
@@ -105,6 +115,7 @@
         <p id="onTime">Thời gian mở: ...</p>
         <p id="offTime">Thời gian tắt: ...</p>
         <p id="autoControl">Tự động bật/tắt theo độ sáng: ...</p>
+        <p id="ultrasonic">Tự động bật tắt theo khoảng cách : Đang tắt</p>
     </div>
 
     <button class="btn btn-on" onclick="setLedStatus(true)">Turn LED ON</button>
@@ -123,14 +134,34 @@
         <button onclick="setTime()">Đặt thời gian</button>
     </div>
 
+    <div class="ultrasonic-container" style="display: flex; flex-direction: column; align-items: center; row-gap: 10px;">
+        <input type="number"  placeholder="Nhập khoảng cách tự động bật/tắt đèn" id="distance" style="width: 50vw; padding: 10px;
+        font-size: 16px;
+        margin: 5px;
+        border: 1px solid #ccc;
+        border-radius: 5px;
+        text-align: center;">
+        <div class="ultrasonic-btn-container" style="width: 50vw; display: flex; flex-direction: column; row-gap: 10px;">
+            <button id="ultrasonic-btn-set" onclick="setDistance()" class="btn" style="background-color: #4CAF50; color: #f0f0f0;">Đặt khoảng cách</button>
+            <button id="ultrasonic-btn" class="btn" onclick="updateAutoControlByUltraSonic()" style="color: #f0f0f0; background-color: #007BFF;">Bật tính tự động bật/tắt theo khoảng cách</button>
+        </div>
+    </div>
+
     <div>
         <button id="autoControlBtn" onclick="setLightSensor()"></button> 
+    </div>
+    <div id="history">
     </div>
 
     <script>
         const webSocketUrl = 'wss://test-1-8yfc.onrender.com/led-status';
         let webSocket;
         var autoControlLed;
+        var autoControlledLebByUltrasonic = false;
+
+        const ultrasonicWebsocketUrl = 'wss://newled.onrender.com/distance';
+        let ultraSonicWebSocket;
+        ultraSonicWebSocket = new WebSocket(ultrasonicWebsocketUrl);
 
         // Kết nối WebSocket
         function connectWebSocket() {
@@ -216,6 +247,13 @@
             const timeOff = body.endTime ? body.endTime : 'Chưa đặt';
             const autoControl = body.lightSensor ? 'Có' : 'Không';
             autoControlLed = body.lightSensor; // Cập nhật trạng thái Light Sensor
+
+            if(body.isOn) {
+                updateHistory("Mở",new Date());
+            } else {
+                updateHistory("Tắt",new Date());
+            }
+
 
             document.getElementById('ledState').textContent = `Đèn đang: ${ledState}`;
             document.getElementById('onTime').textContent = `Thời gian mở: ${timeOn}`;
@@ -306,7 +344,90 @@
             document.getElementById('autoControlBtn').textContent = autoControlLed ? 'Tắt tự động bật/tắt' : 'Bật tự động bật/tắt';
         }
 
-        // Kết nối WebSocket khi tải trang
+        function updateHistory(status,time) {
+            const day = time.getDate();
+            const month = time.getMonth() + 1; 
+            const year = time.getFullYear();
+            const hours = time.getHours();
+            const minutes = time.getMinutes();
+            const seconds = time.getSeconds();
+
+            formatedTime = `${day}/${month}/${year} ${hours}:${minutes}:${seconds}`;
+            const history = document.getElementById('history');
+            const p = document.createElement('p');
+            p.textContent = `${status} - ${formatedTime}`;
+            history.appendChild(p);
+        }
+
+        function updateAutoControlByUltraSonic(){
+            autoControlledLebByUltrasonic = !autoControlledLebByUltrasonic;
+            document.getElementById('ultrasonic').textContent = autoControlledLebByUltrasonic ? 'Tự động bật tắt theo khoảng cách : BẬT' : 'Tự động bật tắt theo khoảng cách : TẮT';
+            document.getElementById('ultrasonic-btn-set').setContent = autoControlledLebByUltrasonic ? 'Tắt tự động bật tắt theo khoảng cách' : 'Bật tự động bật tắt theo khoảng cacha';
+            if(autoControlledLebByUltrasonic){
+                connectUltrasonicWebSocket();
+            }else{
+                ultraSonicWebSocket.close();
+            }
+        }
+
+        function setDistance(){
+            const distance = document.getElementById('distance').value;
+            const requestBody = {
+                distance: distance
+            };
+            console.log('Request body:', requestBody);
+            fetch('https://newled.onrender.com/set-distance', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(requestBody)
+            })
+                .then(response => {
+                    if (response.ok) {
+                        alert('Distance updated successfully!');
+                        console.log('Distance updated successfully:', requestBody);
+                    } else {
+                        alert('Failed to update distance.');
+                        console.error('Failed to update distance:', response.statusText);
+                    }
+                })
+                .catch(error => {
+                    alert('An error occurred while updating distance.');
+                    console.error('Error:', error);
+                });
+        }
+
+        function connectUltrasonicWebSocket() {
+            ultraSonicWebSocket.onmessage = (event) => {
+                console.log('Message received from server:', event.data);
+                var jsonString = event.data;
+                jsonString = jsonString.replace(/([{,]\s*)(\w+)(\s*:)/g, '$1"$2"$3');
+                const jsonObject = JSON.parse(jsonString);
+
+                const led = jsonObject.led;
+                const distance = jsonObject.distance;
+
+                const ledState = led ? 'Bật' : 'Tắt';
+                document.getElementById('ledState').textContent = `Đèn đang: ${ledState}`;
+                if(led){
+                    updateHistory("Mở", new Date());
+                }else{
+                    updateHistory("Tắt", new Date());
+                }
+                setLedStatus(led)
+
+            }
+
+            ultraSonicWebSocket.onclose = () => {
+                console.log('WebSocket connection closed, retrying in 5 seconds...');
+                setTimeout(connectUltrasonicWebSocket, 5000); // Tự động kết nối lại sau 5 giây
+            };
+
+            ultraSonicWebSocket.onerror = (error) => {
+                console.error('WebSocket error:', error);
+            };
+        }
         connectWebSocket();
     </script>
 </body>
